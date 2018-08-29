@@ -111,10 +111,10 @@ group by fc.id_contract_inst, fc.id_department)
 select fs.v_name as v_service_name, query1.id_department, sum(query1.sum_AP) as total_sumAP_of_service
 from query1
         
-join (select query1.id_department, avg(query1.sum_AP) as f_avg_cost
+join (select query1.id_department, avg(query1.sum_AP) as avg_sumAP
         from query1
         group by query1.id_department) table1
-        on query1.id_department = table1.id_department and query1.sum_AP > table1.f_avg_cost
+        on query1.id_department = table1.id_department and query1.sum_AP > table1.avg_sumAP
     
 join fw_services fss
 on fss.dt_start <= current_timestamp 
