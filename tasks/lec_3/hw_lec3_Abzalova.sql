@@ -1,15 +1,20 @@
 --1
+CREATE OR REPLACE procedure saveSigners(pV_FIO      in scd_signers.v_fio%TYPE := 'Abdullin',
+                                        pID_MANAGER in scd_signers.ID_MANAGER%TYPE :=202002,
+                                        pACTION     in number :=1) is
 
-CREATE OR REPLACE procedure saveSigners(pV_FIO      in scd_signers.v_fio%TYPE,
-                                        pID_MANAGER in scd_signers.ID_MANAGER%TYPE,
-                                        pACTION     in number) is
-
+user_count number;
 BEGIN
-  SELECT ss.id_manager 
-  INTO pID_MANAGER 
-  FROM scd_signers ss
-  WHERE ci_users.id_user = pID_MANAGER;
 
+    begin
+      SELECT cu.id_user 
+      INTO user_count 
+      FROM ci_users cu
+      WHERE cu.id_user = pID_MANAGER;
+    EXCEPTION
+        WHEN no_data_found THEN
+        raise_application_error (-20020,'ѕользователь не найден');
+   
     CASE
         WHEN pACTION = 1 THEN
             INSERT INTO scd_signers 
@@ -21,142 +26,49 @@ BEGIN
             SET v_fio = pV_FIO
             WHERE id_manager = pID_MANAGER;
         WHEN pACTION = 3 THEN
-            DELETE FROM scd_signers WHERE pID_MANAGER = id_manager;
+            DELETE FROM scd_signers WHERE id_manager = pID_MANAGER;
     END CASE;
   
-EXCEPTION
-    WHEN no_data_found THEN
-    raise_application_error (-20020,'ѕользователь не найден');
-    WHEN OTHERS THEN
-    raise_application_error(??,
-                            'ѕользователь заведен в справочнике');
-END;
-
+/*EXCEPTION
+    raise_application_error(-1,
+                            'ѕользователь заведен в справочнике');*/
+ end;
+end;
 
 --2
-
---1var
-CREATE OR REPLACE FUNCTION getdecoder_1(id_equip_ki IN scd_equip_kits.id_equip_kits_inst%TYPE)
+CREATE OR REPLACE FUNCTION getdecoder_1(id_equip_ki IN scd_equip_kits.id_equip_kits_inst%TYPE:=222)
   
   RETURN VARCHAR2 IS
-  id_equip_ki scd_equip_kits.id_contract_inst%TYPE;
   return_value VARCHAR2(100);
-  agency NUMBER;
   
   BEGIN
-  SELECT sc.b_agency
-    INTO agency
+
+  SELECT (case sc.b_agency
+            when 1 then sek.v_cas_id
+            when 0 then sek.v_ext_ident
+            end)
+    INTO return_value
     FROM scd_contracts sc
     JOIN scd_equip_kits sek
       ON sek.id_contract_inst = sc.id_contract_inst
      AND sek.dt_start <= current_timestamp
-     AND sek.dt_stop > current_timestamp
-   WHERE id_equip_ki = sek.id_equip_kits_inst;
-
-    IF agency = 1
-    THEN
-    SELECT sek.v_cas_id
-      INTO return_value
-      FROM scd_equip_kits sek
-     WHERE id_equip_ki = sek.id_equip_kits_inst;
-     
-    ELSIF agency = 0 
-    THEN
-      SELECT sek.v_ext_ident
-        INTO return_value
-        FROM scd_equip_kits sek
-       WHERE id_equip_ki = sek.id_equip_kits_inst;
-    END IF;
-    
+     AND sek.dt_stop >= current_timestamp
+   WHERE sek.id_equip_kits_inst = id_equip_ki ;
+   
     EXCEPTION 
-    WHEN OTHERS THEN 
-        raise_application_error(??, 'ќборудование не найдено');
-    END;
+    WHEN no_data_found THEN
+        raise_application_error(-2, 'ќборудование не найдено');
       
-    RETURN return_value;
+   RETURN return_value;  
   END;
-
-
---2var
-CREATE OR REPLACE FUNCTION getdecoder_1(id_equip_ki IN scd_equip_kits.id_equip_kits_inst%TYPE)
-  
-  RETURN VARCHAR2 IS
-  id_equip_ki scd_equip_kits.id_contract_inst%TYPE;
-  return_value VARCHAR2(100);
-  agency NUMBER;
-  
-  BEGIN
-  SELECT sc.id_contract_inst, sc.b_agency
-    INTO id_equip_ki, agency
-    FROM scd_contracts sc
-    JOIN scd_equip_kits sek
-      ON sek.id_contract_inst = sc.id_contract_inst
-     AND sek.dt_start <= current_timestamp
-     AND sek.dt_stop > current_timestamp
-   WHERE id_equip_ki = sek.id_equip_kits_inst;
-
-    IF agency = 1
-    THEN
-    SELECT sek.v_cas_id
-      INTO return_value
-      FROM scd_equip_kits sek
-     WHERE id_equip_ki = sek.id_equip_kits_inst;
-     
-    ELSIF agency = 0 
-    THEN
-      SELECT sek.v_ext_ident
-        INTO return_value
-        FROM scd_equip_kits sek
-       WHERE id_equip_ki = sek.id_equip_kits_inst;
-    END IF;
-    
-    EXCEPTION 
-       WHEN no_data_found THEN 
-        raise_application_error(??, 'ќборудование не найдено');
-    END;
-      
-    RETURN return_value;
-  END;
-
-
-
-
-
 
 --3
-
 create or replace procedure getEquip(pID_EQUIP_KITS_INST in scd_equip_kits.id_equip_kits_inst%TYPE default null,
                                      dwr                 out sys_refcursor) is
 
 begin
 
-    if pID_EQUIP_KITS_INST is null
-    then
---нужно ли делать цикл чтобы вывести все данные из таблицы?    
-      open dwr for
-        select distinct fc.v_long_title,
-                        cu.v_username,
-                        fc.v_ext_ident,
-                        sekt.v_name,
-                        getDecoder(sek.id_equip_kits_inst) as decoder_num
-        from
-            scd_equip_kits sek
-               join scd_equipment_kits_type sekt on sekt.id_equip_kits_type = sek.id_equip_kits_type
-                                    and sekt.dt_start <= current_timestamp
-                                    and sekt.dt_stop > current_timestamp 
-                join fw_contracts fc on fc.id_contract_inst = sek.id_contract_inst
-                                        and fc.dt_start <= current_timestamp
-                                        and fc.dt_stop > current_timestamp
-                                        and fc.v_status = 'A'
-                    join ci_users cu on cu.id_client_inst = fc.id_client_inst
-                                            and cu.v_status = 'A' 
-                        join fw_clients fcli on fcli.id_client_inst = cu.id_client_inst                     
-                    
-           where sek.dt_start <= current_timestamp
-                    and sek.dt_stop > current_timestamp;
-      
-    else 
-      
+    
       open dwr for
         select distinct fc.v_long_title,
                         cu.v_username,
@@ -173,24 +85,23 @@ begin
                                         and fc.dt_start <= current_timestamp
                                         and fc.dt_stop > current_timestamp
                                         and fc.v_status = 'A'
-                    join ci_users cu on cu.id_client_inst = fc.id_client_inst
+                    join ci_users cu on cu.id_user = fc.id_client_inst
                                             and cu.v_status = 'A' 
-                        join fw_clients fcli on fcli.id_client_inst = cu.id_client_inst                     
+                        join fw_clients fcli on fcli.id_client_inst = cu.id_user 
                                                 and fcli.dt_start <= current_timestamp
                                                 and fcli.dt_stop > current_timestamp
-           where sek.id_equip_kits_inst = pID_EQUIP_KITS_INST
+                    
+           where sek.id_equip_kits_inst = pID_EQUIP_KITS_INST or pID_EQUIP_KITS_INST is null
                     and sek.dt_start <= current_timestamp
                     and sek.dt_stop > current_timestamp;
            
-    end if;
     exception 
        when no_data_found then 
-        raise_application_error(??, 'ќборудование не найдено');
-    end;
-end; 
+        raise_application_error(-1, 'ќборудование не найдено');
 
+end;            
+        
 --4
-
 create or replace procedure checkstatus is
 
 client_name    fw_clients.v_long_title%TYPE;
@@ -214,9 +125,9 @@ cursor checkstatus_cursor is
                                     and fc.dt_stop > current_timestamp
                                     and fc.v_status = 'A'
            
-                join ci_users cu on cu.id_client_inst = fc.id_client_inst
+                join ci_users cu on cu.id_user = fc.id_client_inst
                                         and cu.v_status = 'A' 
-                    join fw_clients fcli on fcli.id_client_inst = cu.id_client_inst
+                    join fw_clients fcli on fcli.id_client_inst = cu.id_user
                                                     and fcli.dt_start <= current_timestamp
                                                     and fcli.dt_stop > current_timestamp
                          join scd_equipment_status ses on ses.id_equipment_status = sek.id_status
@@ -239,16 +150,16 @@ begin
         set ses.v_name = 'ѕродано'
         where current of checkstatus_cursor;
         
-            if agency = 1 then
-                dbms_output.put_line('ƒл€ оборудовани€ '||id_equip_ki||' дилера '|| client_name|| ' с контрактом '|| ident_contract|| ', '||
-                                             '€вл€ющегос€ агентской сетью был проставлен статус ѕродано.');
-            else
-                dbms_output.put_line('ƒл€ оборудовани€ '||id_equip_ki||' дилера '|| client_name|| ' с контрактом '|| ident_contract|| ', '||
-                                             'не€вл€ющегос€ агентской сетью был проставлен статус ѕродано.');
-           end if;
+            dbms_output.put_line('ƒл€ оборудовани€ '||id_equip_ki||' дилера '|| client_name|| ' с контрактом '|| ident_contract|| ', '||
+                                            case agency
+                                            when 1 then '€вл€ющегос€ агентской сетью был проставлен статус ѕродано.'
+                                            else  'не€вл€ющегос€ агентской сетью был проставлен статус ѕродано.'
+                                            end);
+
 
 
     end loop;
 
 close checkstatus_cursor;
 end;      
+     
